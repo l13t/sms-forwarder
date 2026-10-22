@@ -29,11 +29,13 @@ The APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. To install 
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The debug APK uses your local debug signing key. Keep the same signing key for future updates on your devices. For regular use, create a signed APK through Android Studio. Do not commit signing keys or `local.properties`.
+The debug APK uses your local debug signing key. For regular use, follow the [signed APK release guide](docs/releases.md) to configure a permanent signing key and publish installable APKs through GitHub Actions. Do not commit signing keys or `local.properties`.
 
 The GitHub Actions workflow **Android checks and APK** runs unit tests, lint, and the APK build, then uploads the APK as an artifact. Run it in your GitHub repository; no remote build has been triggered from this workspace.
 
 SDK setup explicitly installs `platform-tools`, `platforms;android-36`, and `build-tools;35.0.0`. It skips the obsolete `tools` package and the global SDK license sweep; only licenses requested while installing these packages are accepted.
+
+Every successful push or merge build on `master` automatically publishes a signed APK and checksum to GitHub Releases after both debug and release checks pass. Versions and tags are generated automatically as `1.0.<CI run number>` and `v1.0.<CI run number>`. Configure signing secrets once using `bash tools/setup_release_signing.sh l13t/sms-forwarder`; subsequent releases require only a normal push. See the [release guide](docs/releases.md) for setup, backups, and installation.
 
 ## Initial setup
 
@@ -78,6 +80,7 @@ Completed deliveries are kept for seven days after completion. All deliveries ex
 - [Webhook API and n8n setup](docs/webhook.md)
 - [Importable n8n workflow](docs/n8n-workflow.json)
 - [Android verification checklist](docs/testing.md)
+- [Signed APK releases](docs/releases.md)
 
 Run the full JVM suite with `./gradlew testDebugUnitTest`. Run Room/queue instrumentation tests with `./gradlew connectedDebugAndroidTest` and a connected emulator or phone.
 

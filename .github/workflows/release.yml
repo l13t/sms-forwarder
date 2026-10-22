@@ -1,0 +1,124 @@
+name: Signed release APK
+
+on:
+  workflow_call:
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set release version
+        id: version
+        shell: bash
+        run: |
+          printf 'version=1.0.%s\n' "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          printf 'version_code=%s\n' "$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+      - name: Restore release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing Actions secret: $name. See docs/releases.md."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release-signing.jks"
+          printf 'ANDROID_KEYSTORE_PATH=%s/release-signing.jks\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install required Android SDK packages
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: 'false'
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test and build signed release APK
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+          APP_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >-
+          ./gradlew --no-daemon testReleaseUnitTest lintRelease assembleRelease
+          "-PreleaseVersionName=$APP_VERSION" "-PreleaseVersionCode=$APP_VERSION_CODE"
+      - name: Verify and package APK
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/sms-forwarder-$APP_VERSION.apk"
+          cd dist
+          sha256sum "sms-forwarder-$APP_VERSION.apk" > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sms-forwarder-release-${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release-signing.jks"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-reports
+          path: app/build/reports/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sms-forwarder-release-${{ needs.build.outputs.version }}
+          path: dist/
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          tag="v$APP_VERSION"
+          if gh release view "$tag" --json tagName --jq .tagName >/dev/null 2>&1; then
+            echo "::notice::Release $tag already exists; leaving its assets unchanged."
+            exit 0
+          fi
+          latest_tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          make_latest="$(python3 - "$latest_tag" "$APP_VERSION" <<'PY'
+          import re, sys
+          previous = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", sys.argv[1])
+          current = tuple(map(int, sys.argv[2].split('.')))
+          newer_exists = previous and tuple(map(int, previous.groups())) >= current
+          print("false" if newer_exists else "true")
+          PY
+          )"
+          gh release create "$tag" "dist/sms-forwarder-$APP_VERSION.apk" dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --generate-notes --title "SMS Forwarder $APP_VERSION" --latest="$make_latest"

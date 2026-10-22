@@ -6,6 +6,7 @@ local.properties
 .idea/
 *.jks
 *.keystore
+release-password
 .DS_Store
 
 # The Gradle wrapper is required to build a fresh checkout, even when global rules ignore JARs.

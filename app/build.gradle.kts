@@ -5,6 +5,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlin.kapt")
 }
+
+val releaseVersionName = providers.gradleProperty("releaseVersionName").getOrElse("1.0.0")
+val releaseVersionCode = providers.gradleProperty("releaseVersionCode").getOrElse("1").toInt()
+require(releaseVersionCode > 0) { "releaseVersionCode must be positive" }
+
+val releaseSigningEnvironment = listOf(
+    "ANDROID_KEYSTORE_PATH", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"
+).associateWith { providers.environmentVariable(it).orNull }
+val hasReleaseSigning = releaseSigningEnvironment.values.all { !it.isNullOrBlank() }
+
 android {
     namespace = "ua.smsforwarder"
     compileSdk = 36
@@ -12,8 +22,8 @@ android {
         applicationId = "ua.smsforwarder"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -21,9 +31,39 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PATH")!!)
+                storePassword = releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigningEnvironment.getValue("ANDROID_KEY_ALIAS")
+                keyPassword = releaseSigningEnvironment.getValue("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isDebuggable = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+        }
+    }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
+
+val validateReleaseSigning by tasks.registering {
+    doLast {
+        val missing = releaseSigningEnvironment.filterValues { it.isNullOrBlank() }.keys
+        check(missing.isEmpty()) { "Release signing requires environment variables: ${missing.joinToString()}" }
+        check(file(releaseSigningEnvironment.getValue("ANDROID_KEYSTORE_PATH")!!).isFile) {
+            "Release signing keystore file does not exist"
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    dependsOn(validateReleaseSigning)
+}
+
 kotlin { jvmToolchain(17) }
 kapt { correctErrorTypes = true }
 dependencies {
