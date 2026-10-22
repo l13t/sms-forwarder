@@ -1,0 +1,108 @@
+{
+  "name": "SMS Forwarder — receive and deduplicate",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sms-forwarder",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "phone-webhook",
+      "name": "Phone webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "4ae6943a-17d2-4a45-81c7-e59b282b1311"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const event = item.json.body;\n  if (!event || event.schema_version !== 1 || typeof event.delivery_id !== 'string' || typeof event.event_id !== 'string' || !['sms.received', 'call.completed', 'notification.posted', 'test'].includes(event.type)) {\n    throw new Error('Invalid SMS Forwarder v1 envelope');\n  }\n  return { json: event };\n});"
+      },
+      "id": "validate",
+      "name": "Validate envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $json.delivery_id }}",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "options": {
+          "historySize": 10000
+        }
+      },
+      "id": "dedupe",
+      "name": "Deduplicate delivery",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "process",
+      "name": "Process event here",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Phone webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate envelope": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate delivery": {
+      "main": [
+        [
+          {
+            "node": "Process event here",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
