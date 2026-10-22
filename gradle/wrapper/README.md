@@ -3,6 +3,10 @@ from the locally cached Gradle 7.3 binary distribution, copied without changes.
 It bootstraps Gradle **8.13**, as configured in `gradle-wrapper.properties`.
 The bootstrap was exercised up to the attempted Gradle download in this workspace.
 
+Commit `gradle-wrapper.jar` with the wrapper scripts and properties. It is required
+for a fresh checkout to run `./gradlew`. The repository's `.gitignore` explicitly
+includes this file so that global `*.jar` ignore rules cannot exclude it.
+
 Gradle is distributed under the Apache License 2.0:
 https://github.com/gradle/gradle/blob/v7.3.0/LICENSE
 
