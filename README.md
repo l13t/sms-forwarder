@@ -33,6 +33,8 @@ The debug APK uses your local debug signing key. Keep the same signing key for f
 
 The GitHub Actions workflow **Android checks and APK** runs unit tests, lint, and the APK build, then uploads the APK as an artifact. Run it in your GitHub repository; no remote build has been triggered from this workspace.
 
+SDK setup explicitly installs `platform-tools`, `platforms;android-36`, and `build-tools;35.0.0`. It skips the obsolete `tools` package and the global SDK license sweep; only licenses requested while installing these packages are accepted.
+
 ## Initial setup
 
 The instructions below use English UI labels. On **Status → App language**, choose **System language**, **English**, or **Ukrainian**. The selection is saved for future launches and applies to screens, validation messages, delivery diagnostics, and the service notification. Notification content and other captured event data retain their original language; API identifiers stay consistent across locales. Android-owned permission screens follow the system language.
