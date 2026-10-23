@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { analyzeCommits } from '@semantic-release/commit-analyzer';
+import { generateNotes } from '@semantic-release/release-notes-generator';
 
 const config = JSON.parse(await readFile(new URL('../.releaserc.json', import.meta.url)));
 const options = config.plugins.find(([name]) => name === '@semantic-release/commit-analyzer')[1];
@@ -47,4 +48,27 @@ test('release configuration publishes only Android assets on master', () => {
   assert.equal(github.successComment, false);
   assert.equal(github.failComment, false);
   assert.equal(github.releasedLabels, false);
+});
+
+test('release notes render features, fixes and breaking changes with the installed preset', async () => {
+  const notesOptions = config.plugins.find(([name]) => name === '@semantic-release/release-notes-generator')[1];
+  const messages = [
+    'feat: add filters',
+    'fix: retry webhooks',
+    'feat(api)!: rename fields\n\nBREAKING CHANGE: Fields renamed in webhook payloads.',
+  ];
+  const notes = await generateNotes(notesOptions, {
+    cwd: process.cwd(),
+    options: { repositoryUrl: 'https://github.com/l13t/sms-forwarder.git' },
+    env: {},
+    logger: { log() {}, warn() {}, error() {} },
+    commits: messages.map((message, index) => ({ message, hash: String(index + 1).padStart(40, '0') })),
+    lastRelease: { version: '1.0.0', gitTag: 'v1.0.0', gitHead: 'a'.repeat(40) },
+    nextRelease: { version: '2.0.0', gitTag: 'v2.0.0', gitHead: 'b'.repeat(40) },
+  });
+  assert.match(notes, /2\.0\.0/);
+  assert.match(notes, /add filters/);
+  assert.match(notes, /retry webhooks/);
+  assert.match(notes, /BREAKING CHANGES?/i);
+  assert.match(notes, /Fields renamed/);
 });

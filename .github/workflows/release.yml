@@ -35,8 +35,8 @@ jobs:
           @semantic-release/release-notes-generator@14.1.0
           @semantic-release/exec@7.1.0
           @semantic-release/github@12.0.0
-          conventional-changelog-conventionalcommits@10.4.1
-      - name: Check commit analysis and APK preparation
+          conventional-changelog-conventionalcommits@9.3.1
+      - name: Check release analysis, notes and APK preparation
         run: |
           node --test tools/release.test.mjs
           python3 tools/test_build_release.py

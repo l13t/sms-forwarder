@@ -8,6 +8,7 @@ on:
       - 'app/src/androidTest/**'
       - 'app/build.gradle.kts'
       - 'tools/capture_screenshots.sh'
+      - 'tools/test_capture_screenshots.py'
       - '.github/workflows/screenshots.yml'
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - 'app/src/androidTest/**'
       - 'app/build.gradle.kts'
       - 'tools/capture_screenshots.sh'
+      - 'tools/test_capture_screenshots.py'
       - '.github/workflows/screenshots.yml'
 permissions:
   contents: read
@@ -31,11 +33,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
+          cmdline-tools-version: '15859902'
           accept-android-sdk-licenses: 'false'
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0 emulator system-images;android-35;google_apis;x86_64'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Check emulator lifecycle script
+        run: python3 tools/test_capture_screenshots.py
       - name: Enable emulator acceleration
         run: sudo chmod a+rw /dev/kvm
       - name: Capture actual UI on a disposable emulator
@@ -50,7 +55,8 @@ jobs:
         with:
           name: screenshot-diagnostics
           path: |
-            /tmp/sms-forwarder-emulator.log
+            ${{ runner.temp }}/sms-forwarder-avd.log
+            ${{ runner.temp }}/sms-forwarder-emulator.log
             app/build/reports/androidTests/
   publish:
     needs: capture

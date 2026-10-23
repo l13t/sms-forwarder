@@ -10,6 +10,8 @@ It captures Status, Webhooks, Rules, History, Settings, About, and the rule edit
 
 README image URLs reference that branch. Images become available after the first successful screenshot workflow run. `docs/screenshots/SOURCE.txt` on the image branch records the source commit used to render them. The images document an example configuration, not live delivery activity.
 
+The workflow pins command-line tools 22.0 (build 15859902), and the capture script uses the `avdmanager` selected on PATH by SDK setup. It avoids an older preinstalled `cmdline-tools/latest`. Creation and boot logs are retained in the diagnostics artifact when a run fails.
+
 The SDK setup installs only the specified platform, build tools, emulator, and API 35 Google APIs system image. It does not run the global SDK license sweep.
 
 ## Local capture
@@ -22,7 +24,7 @@ sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;35.0.0' \
 bash tools/capture_screenshots.sh
 ```
 
-The script creates a fresh `sms-forwarder-docs` AVD, boots it headlessly on port 5580, runs the screenshot instrumentation test, pulls PNG files into `artifacts/screenshots`, and stops the emulator. Existing AVD data under that name is replaced. The script refuses to start while any other device or emulator is connected, so the capture test cannot replace data on another installation. On an Apple Silicon Mac, use GitHub Actions for this x86_64 workflow or adapt the system image to the host architecture.
+The script creates a fresh `sms-forwarder-docs` AVD, boots it headlessly on port 5580, runs the screenshot instrumentation test, pulls PNG files into `artifacts/screenshots`, and stops the emulator. Each run uses a private temporary AVD registry shared by `avdmanager` and the emulator; existing user AVDs are left untouched. The AVD index and emulator visibility are checked before boot, and the temporary registry is removed on exit. The script refuses to start while any other device or emulator is connected, so the capture test cannot replace data on another installation. On an Apple Silicon Mac, use GitHub Actions for this x86_64 workflow or adapt the system image to the host architecture.
 
 The instrumentation test requires the explicit `captureScreenshots=true` runner argument and emulator hardware. It clears that emulator installation's local app data to create the documented demo scenario. Ordinary instrumentation runs skip the capture test. Demo seeding code lives only under `src/androidTest` and is not included in release APKs.
 

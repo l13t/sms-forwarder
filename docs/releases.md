@@ -62,7 +62,7 @@ Download the resulting `sms-forwarder-<semantic-version>.apk` from the repositor
 
 Debug and release checks must both succeed before tagging or publication. CI runs for the same ref are serialized without canceling an active run; GitHub may replace a pending run with a newer push. The next successful analysis includes all unreleased commits. Failed preparation removes its temporary signing key and does not create a tag. A verified APK is retained as an artifact if a later publication step fails.
 
-The release tools are installed at pinned versions in the workflow using Node.js 24. The config is in `.releaserc.json`; `tools/build_release.sh` is the prepare hook. Configuration tests run against the actual commit analyzer in CI:
+The release tools are installed at pinned versions in the workflow using Node.js 24. The Conventional Commits preset stays on 9.3.1 to match the writer 8 dependency used by release-notes-generator 14.1.0; preset 10 requires writer 9. CI tests both commit analysis and actual release-note rendering to catch incompatible tool upgrades. The config is in `.releaserc.json`; `tools/build_release.sh` is the prepare hook. Configuration tests run against the actual commit analyzer in CI:
 
 ```sh
 node --test tools/release.test.mjs

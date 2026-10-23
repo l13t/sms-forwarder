@@ -4,9 +4,11 @@ set -euo pipefail
 sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [[ -n "$sdk_dir" ]] || { echo 'Set ANDROID_HOME to your Android SDK.' >&2; exit 1; }
 avd_name="sms-forwarder-docs"
-avdmanager="$sdk_dir/cmdline-tools/latest/bin/avdmanager"
-# setup-android may install the tools into a versioned directory.
-if [[ ! -x "$avdmanager" ]]; then avdmanager="$(command -v avdmanager)"; fi
+# setup-android prepends its selected version; a preinstalled `latest` can be older.
+avdmanager="$(command -v avdmanager || true)"
+if [[ -z "$avdmanager" ]]; then avdmanager="$sdk_dir/cmdline-tools/latest/bin/avdmanager"; fi
+[[ -x "$avdmanager" ]] || { echo 'avdmanager is unavailable. Install Android command-line tools.' >&2; exit 1; }
+emulator="$sdk_dir/emulator/emulator"
 adb="$sdk_dir/platform-tools/adb"
 serial="emulator-5580"
 export ANDROID_SERIAL="$serial"
@@ -14,17 +16,57 @@ if [[ -n "$("$adb" devices | awk 'NR>1 && NF {print $1}')" ]]; then
   echo "Disconnect other devices and emulators before capturing screenshots." >&2
   exit 1
 fi
-printf 'no\n' | "$avdmanager" create avd --force --name "$avd_name" --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
-"$sdk_dir/emulator/emulator" -avd "$avd_name" -port 5580 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader > /tmp/sms-forwarder-emulator.log 2>&1 &
+runtime_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+work_dir="$(mktemp -d "$runtime_dir/sms-forwarder-docs.XXXXXX")"
+export ANDROID_USER_HOME="$work_dir/.android"
+export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+# Legacy SDK home overrides must not redirect one tool to another AVD registry.
+unset ANDROID_SDK_HOME
+mkdir -p "$ANDROID_AVD_HOME"
+avd_log="$runtime_dir/sms-forwarder-avd.log"
+emulator_log="$runtime_dir/sms-forwarder-emulator.log"
+emulator_pid=""
+cleanup() {
+  local result_code=$?
+  if [[ -n "$emulator_pid" ]]; then
+    if kill -0 "$emulator_pid" 2>/dev/null; then
+      "$adb" -s "$serial" emu kill >/dev/null 2>&1 || true
+      kill "$emulator_pid" 2>/dev/null || true
+    fi
+    wait "$emulator_pid" 2>/dev/null || true
+  fi
+  rm -rf "$work_dir"
+  return "$result_code"
+}
+trap cleanup EXIT
+printf 'avdmanager: %s\nAVD directory: %s\n' "$avdmanager" "$ANDROID_AVD_HOME"
+if ! printf 'no\n' | "$avdmanager" create avd --force --name "$avd_name" \
+  --path "$ANDROID_AVD_HOME/$avd_name.avd" \
+  --package 'system-images;android-35;google_apis;x86_64' --device pixel_6 > "$avd_log" 2>&1; then
+  cat "$avd_log"
+  exit 1
+fi
+cat "$avd_log"
+if [[ ! -s "$ANDROID_AVD_HOME/$avd_name.ini" || ! -s "$ANDROID_AVD_HOME/$avd_name.avd/config.ini" ]]; then
+  echo 'avdmanager did not create the expected AVD index and config files.' >&2
+  "$avdmanager" list avd
+  exit 1
+fi
+available_avds="$("$emulator" -list-avds)"
+if ! grep -Fxq "$avd_name" <<< "$available_avds"; then
+  printf 'Emulator cannot resolve the created AVD. Visible AVDs:\n%s\n' "$available_avds" >&2
+  exit 1
+fi
+"$emulator" -avd "$avd_name" -port 5580 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader > "$emulator_log" 2>&1 &
 emulator_pid=$!
-trap '"$adb" -s "$serial" emu kill >/dev/null 2>&1 || true; wait "$emulator_pid" 2>/dev/null || true' EXIT
 booted=false
 for ((attempt=0;attempt<120;attempt++)); do
-  if ! kill -0 "$emulator_pid" 2>/dev/null; then cat /tmp/sms-forwarder-emulator.log; exit 1; fi
+  if ! kill -0 "$emulator_pid" 2>/dev/null; then cat "$emulator_log"; exit 1; fi
   if [[ "$("$adb" -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; then booted=true; break; fi
   sleep 2
 done
-[[ "$booted" == true ]] || { echo 'Emulator boot timed out.' >&2; exit 1; }
+[[ "$booted" == true ]] || { echo 'Emulator boot timed out.' >&2; cat "$emulator_log"; exit 1; }
 "$adb" shell settings put global window_animation_scale 0
 "$adb" shell settings put global transition_animation_scale 0
 "$adb" shell settings put global animator_duration_scale 0
