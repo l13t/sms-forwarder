@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ua.smsforwarder.core.*
+import ua.smsforwarder.R
 import ua.smsforwarder.data.WebhookEntity
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -25,11 +26,11 @@ fun RuleEditor(initial: Rule,hooks: List<WebhookEntity>,onDismiss: ()->Unit,onSa
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     Dialog(onDismissRequest=onDismiss,properties=DialogProperties(usePlatformDefaultWidth=false)) {
-        Surface(Modifier.fillMaxSize()) { Scaffold(topBar={TopAppBar(title={Text(tr(Message.RULE))},navigationIcon={TextButton(onClick=onDismiss){Text(tr(Message.BACK))}},actions={TextButton(onClick={
+        Surface(Modifier.fillMaxSize()) { Scaffold(topBar={TopAppBar(title={Text(tr(Message.RULE))},navigationIcon={IconButton(onClick=onDismiss){AppIcon(R.drawable.ic_back,description=tr(Message.BACK))}},actions={TextButton(onClick={
             error=RuleEngine.validate(rule) ?: if(rule.webhookIds.any { id -> hooks.none { it.id==id } }) tr(Message.CHOOSE_EXISTING_WEBHOOKS) else null
             if(error==null) onSave(rule)
         }){Text(tr(Message.SAVE))}})}) { padding ->
-            Column(Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(padding).padding(20.dp).imePadding().verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(rule.name,{rule=rule.copy(name=it)},label={Text(tr(Message.RULE_NAME))},modifier=Modifier.fillMaxWidth())
                 Text(tr(Message.SOURCES),style=MaterialTheme.typography.titleMedium)
                 FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) { eventTypes.forEach { (id,label) -> FilterChip(selected=id in rule.types,onClick={rule=rule.copy(types=if(id in rule.types) rule.types-id else rule.types+id)},label={Text(label)}) } }
@@ -42,7 +43,7 @@ fun RuleEditor(initial: Rule,hooks: List<WebhookEntity>,onDismiss: ()->Unit,onSa
                 rule.webhookIds.filter { id -> hooks.none { it.id==id } }.forEach { missing ->
                     TextButton(onClick={rule=rule.copy(webhookIds=rule.webhookIds-missing)}) { Text(tr(Message.REMOVE_DELETED_WEBHOOK , missing.take(8))) }
                 }
-                Text(tr(Message.CONDITIONS),style=MaterialTheme.typography.titleMedium)
+                SectionTitle(tr(Message.CONDITIONS))
                 Text(tr(Message.AN_EMPTY_AND_GROUP_MATCHES_ALL_EVENTS),style=MaterialTheme.typography.bodySmall)
                 GroupEditor(rule.conditions,0,{rule=rule.copy(conditions=it)})
                 Text(tr(Message.CALL_TYPES_MISSED_INCOMING_OUTGOING_REJECTED_SIM),style=MaterialTheme.typography.bodySmall)

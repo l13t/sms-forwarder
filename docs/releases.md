@@ -2,13 +2,34 @@
 
 The **Signed release APK** workflow builds an installable, signed release APK and a `SHA256SUMS` file. It runs release unit tests and lint, builds the APK, and verifies its signature before uploading artifacts or publishing a release.
 
-Every push or merge to `master` automatically runs the **Android checks and APK** workflow. Once its debug checks pass, it calls the signed release workflow, which runs release checks, builds and signs the APK, verifies the signature, and publishes a GitHub Release. Pull requests and other branches run checks without publishing.
+Every push or merge to `master` runs **Android checks and APK**. After debug checks pass, the release workflow uses **semantic-release** to analyze all commits since the last release tag. If a new release is needed, its prepare hook runs release tests and lint, builds and signs the APK, and verifies its signature. Only after preparation succeeds does semantic-release create the version tag and publish the APK, checksum, and generated release notes. Pull requests and other branches run checks without publishing.
 
-No manual version tags are required. The pipeline creates a tag pointing to the exact commit that passed the checks and attaches the APK and checksum. Releases use version `1.0.<CI run number>`, for example `1.0.42` with tag `v1.0.42`. Version codes are `1000 + CI run number`. Keep the CI workflow's run counter when making future changes so version codes continue increasing.
+## Conventional Commits
 
-To start another build manually, use **Actions → Android checks and APK → Run workflow** and select `master`. It follows the same automatic release process without a version input.
+| Commit | Version change from `1.4.2` |
+| --- | --- |
+| `fix(webhook): preserve event IDs` | `1.4.3` (patch) |
+| `perf: reduce database reads` | `1.4.3` (patch) |
+| `feat: add notification filters` | `1.5.0` (minor) |
+| `feat(ui)!: replace navigation` | `2.0.0` (major) |
+| Any type with a `BREAKING CHANGE:` or `BREAKING-CHANGE:` footer | Major |
+| Non-breaking `docs:`, `chore:`, `ci:`, `test:`, `style:`, `refactor:` | No release |
 
-The workflow needs signing secrets configured once. It fails with the missing secret names if signing is unavailable; it never publishes an unsigned APK or silently substitutes a debug key.
+Both `!` after the type/scope and a breaking-change footer are supported by the Conventional Commits preset. The highest-impact change among all commits since the previous release wins. A documentation commit pushed after an unreleased feature still includes that feature in the next release.
+
+Example major release:
+
+```sh
+git add -A
+git commit -m "feat(ui)!: adopt Material 3 navigation"
+git push origin master
+```
+
+If the latest release is `v1.x.y`, this creates `v2.0.0` after successful checks. With no existing release tag, the first release is `v1.0.0`. Existing reachable `vMAJOR.MINOR.PATCH` tags, including previous counter-based tags, are respected as the release baseline. No manual version edits or tags are required. For squash merges, make the PR title a Conventional Commit because the squash commit message is what reaches `master`.
+
+The version name embedded in the APK is exactly the semantic release version. Android's numeric `versionCode` remains `1000 + CI run number`, independent of major/minor/patch, to keep device updates increasing across releases. Preserve the CI workflow run counter. Local debug builds use `0.0.0-dev` unless a version is supplied explicitly.
+
+You can rerun analysis through **Actions → Android checks and APK → Run workflow** on `master`. When there are no release-worthy commits since the latest tag, it succeeds without building or publishing another release APK. Signing secrets are checked inside the prepare hook only when an APK release is actually needed.
 
 ## One-time signing setup
 
@@ -37,14 +58,23 @@ If you already have a signing key, configure those four secrets under **Settings
 
 After the one-time signing setup, commit and push changes to `master` as usual. GitHub Actions performs all release steps automatically. There is no `git tag` step and no need to create a release in the GitHub UI.
 
-Download the resulting `sms-forwarder-1.0.<CI run number>.apk` from the repository's **Releases** page. The build artifact contains the same APK and checksum. A rerun of an already published run retains the same version and leaves its existing release assets unchanged. A new workflow run receives a new version.
+Download the resulting `sms-forwarder-<semantic-version>.apk` from the repository's **Releases** page. The artifact contains the same APK and checksum. Release notes are generated from Conventional Commits. There are no generated version/changelog commits and no npm package is published. Automatic issue/PR comments and released labels are disabled.
 
-Publication requires both the debug checks and the signed release checks to succeed. A failed build does not publish a release. CI runs for the same ref are serialized without canceling an active run; GitHub may replace a pending run with a newer push. If an older run is rerun after a newer release, it does not replace the newer release as **Latest**.
+Debug and release checks must both succeed before tagging or publication. CI runs for the same ref are serialized without canceling an active run; GitHub may replace a pending run with a newer push. The next successful analysis includes all unreleased commits. Failed preparation removes its temporary signing key and does not create a tag. A verified APK is retained as an artifact if a later publication step fails.
+
+The release tools are installed at pinned versions in the workflow using Node.js 24. The config is in `.releaserc.json`; `tools/build_release.sh` is the prepare hook. Configuration tests run against the actual commit analyzer in CI:
+
+```sh
+node --test tools/release.test.mjs
+python3 tools/test_build_release.py
+```
+
+The Node test requires the tooling dependencies installed by the workflow. The Python tests exercise the real prepare script with isolated mock Gradle and SDK executables; they do not create a production APK or require signing secrets.
 
 ## Install and update
 
 ```sh
-adb install -r sms-forwarder-1.0.42.apk
+adb install -r sms-forwarder-2.0.0.apk
 ```
 
 APK updates require the same package name and signing certificate and a version code at least as high as the installed version. An existing debug APK uses a different certificate and must be uninstalled before the first release APK can be installed. Uninstalling removes that installation's local settings and queued events, so finish pending deliveries and record your configuration first.
@@ -76,4 +106,4 @@ Run this example in Bash. If using an existing key with a different private-key 
 
 Release signing is configured only when all four environment variables are present. Debug builds continue to use the normal debug key. Creating an actual APK requires the Android SDK and downloadable Gradle/Maven dependencies; the release workflow must complete successfully before an APK is available.
 
-References: [Reusable GitHub Actions workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [Android app signing](https://developer.android.com/studio/publish/app-signing) and [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create).
+References: [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), [semantic-release](https://semantic-release.org/), [Reusable GitHub Actions workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [Android app signing](https://developer.android.com/studio/publish/app-signing) and [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create).

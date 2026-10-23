@@ -11,3 +11,8 @@ release-password
 
 # The Gradle wrapper is required to build a fresh checkout, even when global rules ignore JARs.
 !/gradle/wrapper/gradle-wrapper.jar
+
+/artifacts/
+
+/node_modules/
+/dist/

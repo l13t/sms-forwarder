@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
-val releaseVersionName = providers.gradleProperty("releaseVersionName").getOrElse("1.0.0")
+val releaseVersionName = providers.gradleProperty("releaseVersionName").getOrElse("0.0.0-dev")
 val releaseVersionCode = providers.gradleProperty("releaseVersionCode").getOrElse("1").toInt()
 require(releaseVersionCode > 0) { "releaseVersionCode must be positive" }
 
@@ -26,7 +26,7 @@ android {
         versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -82,6 +82,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
