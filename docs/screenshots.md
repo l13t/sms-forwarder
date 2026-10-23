@@ -14,6 +14,8 @@ The workflow pins command-line tools 22.0 (build 15859902), and the capture scri
 
 The SDK setup installs only the specified platform, build tools, emulator, and API 35 Google APIs system image. It does not run the global SDK license sweep.
 
+The capture test streams PNG bytes directly into shell-owned storage on the emulator, then verifies each file's size before the script pulls it. Export failures include command stderr in the test report. This avoids copying through app external storage and does not depend on shell operators being interpreted by `UiAutomation`.
+
 ## Local capture
 
 On a Linux x86_64 computer with JDK 17, Android SDK, working emulator acceleration, and these SDK packages installed:

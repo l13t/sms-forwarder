@@ -2,6 +2,7 @@ package ua.smsforwarder
 
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -13,7 +14,7 @@ import org.junit.Rule
 import org.junit.Test
 import ua.smsforwarder.core.*
 import ua.smsforwarder.data.*
-import java.io.File
+import java.io.ByteArrayOutputStream
 import java.time.Instant
 
 /** Explicitly opt-in: this test replaces the disposable emulator's local app data. */
@@ -59,17 +60,17 @@ class ReadmeScreenshotsTest {
             compose.waitUntil(10_000) {
                 runCatching { compose.onNodeWithTag("stat_rules").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.Text].any {it.text=="3"} }.getOrDefault(false)
             }
-            save(app,"$language-$theme/status.png")
+            save("$language-$theme/status.png")
             for((index,name) in listOf(1 to "webhooks",2 to "rules",3 to "history",4 to "settings",5 to "about")) {
                 navigate(index)
                 if(index==1) compose.onNodeWithTag("webhook_demo-main").assertExists()
-                save(app,"$language-$theme/$name.png")
+                save("$language-$theme/$name.png")
             }
             navigate(2)
             compose.onNodeWithTag("rules_list").performScrollToNode(hasTestTag("edit_rule_demo-sms"))
             compose.onNodeWithTag("edit_rule_demo-sms").performClick()
             compose.waitForIdle()
-            save(app,"$language-$theme/rule-editor.png")
+            save("$language-$theme/rule-editor.png")
             compose.onNodeWithContentDescription(tr(Message.BACK)).performClick()
             compose.waitForIdle()
         }
@@ -79,19 +80,42 @@ class ReadmeScreenshotsTest {
         compose.onNodeWithTag("nav_$index").performScrollTo().performClick()
         compose.waitForIdle()
     }
-    private fun save(app:ForwarderApp,path:String) {
+    private fun save(path:String) {
+        require(path.matches(Regex("(en|uk)-(light|dark)/[a-z-]+\\.png")))
         compose.waitForIdle()
         val image=requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-        val file=File(app.getExternalFilesDir(null),"screenshots/$path")
-        file.parentFile!!.mkdirs()
-        file.outputStream().use {check(image.compress(Bitmap.CompressFormat.PNG,100,it))}
-        image.recycle()
-        // Shell-owned output survives instrumentation APK cleanup between theme runs.
+        val png=try {
+            ByteArrayOutputStream().use {
+                check(image.compress(Bitmap.CompressFormat.PNG,100,it)) { "Could not encode screenshot: $path" }
+                it.toByteArray()
+            }
+        } finally { image.recycle() }
+        // Stream to shell-owned storage; avoid app storage access and shell operators.
+        // These files survive instrumentation APK cleanup between theme runs.
         val directory="/data/local/tmp/sms-forwarder-screenshots/${path.substringBeforeLast('/')}"
-        val output=InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "mkdir -p '$directory' && cp '${file.absolutePath}' '$directory/${file.name}' && echo captured"
-        )
-        val copied=android.os.ParcelFileDescriptor.AutoCloseInputStream(output).bufferedReader().use {it.readText()}
-        check(copied.trim()=="captured") {"Could not export screenshot: $copied"}
+        val file="/data/local/tmp/sms-forwarder-screenshots/$path"
+        val created=shell("mkdir -p $directory")
+        check(created.second.isBlank()) { "Could not create screenshot directory: ${created.second}" }
+        val written=shell("dd of=$file",png)
+        val size=shell("stat -c %s $file")
+        check(size.first.trim().toLongOrNull()==png.size.toLong() && size.second.isBlank()) {
+            "Could not export screenshot $path (${png.size} bytes): dd=${written.second}; stat=$size"
+        }
+    }
+
+    /** Only used for bounded-output commands; none interpret shell syntax. */
+    private fun shell(command:String,input:ByteArray=byteArrayOf()):Pair<String,String> {
+        check(Build.VERSION.SDK_INT>=34) { "Screenshot export requires an API 34+ emulator" }
+        val streams=InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommandRwe(command)
+        ParcelFileDescriptor.AutoCloseInputStream(streams[0]).use { stdout ->
+            ParcelFileDescriptor.AutoCloseInputStream(streams[2]).use { stderr ->
+                val write=runCatching {
+                    ParcelFileDescriptor.AutoCloseOutputStream(streams[1]).use { it.write(input) }
+                }
+                val result=stdout.bufferedReader().readText() to stderr.bufferedReader().readText()
+                check(write.isSuccess) { "Screenshot command failed: $command; stderr=${result.second}; ${write.exceptionOrNull()}" }
+                return result
+            }
+        }
     }
 }
