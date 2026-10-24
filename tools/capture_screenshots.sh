@@ -58,6 +58,8 @@ if ! grep -Fxq "$avd_name" <<< "$available_avds"; then
   printf 'Emulator cannot resolve the created AVD. Visible AVDs:\n%s\n' "$available_avds" >&2
   exit 1
 fi
+# Do the CPU/memory-heavy compilation before Android starts its first boot.
+./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
 "$emulator" -avd "$avd_name" -port 5580 -no-window -no-audio -no-boot-anim -no-snapshot -wipe-data -gpu swiftshader > "$emulator_log" 2>&1 &
 emulator_pid=$!
 booted=false
@@ -67,6 +69,17 @@ for ((attempt=0;attempt<120;attempt++)); do
   sleep 2
 done
 [[ "$booted" == true ]] || { echo 'Emulator boot timed out.' >&2; cat "$emulator_log"; exit 1; }
+# This AVD is disposable and tests launch the activity explicitly. Prevent the
+# unused Pixel Launcher from starting again and putting an ANR over the app.
+launcher='com.google.android.apps.nexuslauncher'
+if "$adb" shell pm list packages "$launcher" | tr -d '\r' | grep -Fxq "package:$launcher"; then
+  launcher_state="$("$adb" shell pm disable-user --user 0 "$launcher" | tr -d '\r')"
+  [[ "$launcher_state" == *'new state: disabled-user'* ]] || {
+    printf 'Could not disable the disposable emulator launcher: %s\n' "$launcher_state" >&2
+    exit 1
+  }
+  "$adb" shell am force-stop --user 0 "$launcher"
+fi
 "$adb" shell settings put global window_animation_scale 0
 "$adb" shell settings put global transition_animation_scale 0
 "$adb" shell settings put global animator_duration_scale 0

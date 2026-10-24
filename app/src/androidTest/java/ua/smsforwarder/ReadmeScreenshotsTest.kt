@@ -83,8 +83,11 @@ class ReadmeScreenshotsTest {
     private fun save(path:String) {
         require(path.matches(Regex("(en|uk)-(light|dark)/[a-z-]+\\.png")))
         compose.waitForIdle()
+        assertAppInForeground(path)
         val image=requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         val png=try {
+            // Reject a system dialog that appeared between the focus check and capture.
+            assertAppInForeground(path)
             ByteArrayOutputStream().use {
                 check(image.compress(Bitmap.CompressFormat.PNG,100,it)) { "Could not encode screenshot: $path" }
                 it.toByteArray()
@@ -100,6 +103,17 @@ class ReadmeScreenshotsTest {
         val size=shell("stat -c %s $file")
         check(size.first.trim().toLongOrNull()==png.size.toLong() && size.second.isBlank()) {
             "Could not export screenshot $path (${png.size} bytes): dd=${written.second}; stat=$size"
+        }
+    }
+
+    private fun assertAppInForeground(path:String) {
+        val activity=compose.activity
+        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
+        val activePackage=automation.rootInActiveWindow?.packageName?.toString()
+        compose.runOnUiThread {
+            check(activity.hasWindowFocus() && activePackage==activity.packageName) {
+                "Refusing screenshot $path: app focused=${activity.hasWindowFocus()}, active package=$activePackage. A system dialog or another app may cover the screen."
+            }
         }
     }
 

@@ -16,6 +16,8 @@ The SDK setup installs only the specified platform, build tools, emulator, and A
 
 The capture test streams PNG bytes directly into shell-owned storage on the emulator, then verifies each file's size before the script pulls it. Export failures include command stderr in the test report. This avoids copying through app external storage and does not depend on shell operators being interpreted by `UiAutomation`.
 
+APKs are compiled before booting Android to avoid competing with first-boot work. Pixel Launcher, when present, is disabled and force-stopped only in the fresh disposable AVD; the test launches the app directly. Before and after every screenshot, the test requires the app window to have focus and its package to own the active accessibility window. A launcher ANR or another focused system dialog fails capture and prevents publication of the whole set.
+
 ## Local capture
 
 On a Linux x86_64 computer with JDK 17, Android SDK, working emulator acceleration, and these SDK packages installed:

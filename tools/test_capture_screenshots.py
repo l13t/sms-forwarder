@@ -49,6 +49,7 @@ if '-list-avds' in sys.argv:
     sys.exit(0)
 name = sys.argv[sys.argv.index('-avd') + 1]
 assert (home / (name + '.ini')).is_file()
+assert Path('apks-built').is_file(), 'Compile APKs before starting the emulator'
 Path('emulator-trace.json').write_text(json.dumps({'avd_home': str(home)}))
 while True:
     time.sleep(0.05)
@@ -63,6 +64,17 @@ if args == ['devices']:
     if os.getenv('MOCK_DEVICE') == 'true': print('other-device\\tdevice')
 elif args[:3] == ['shell', 'getprop', 'sys.boot_completed']:
     print('1')
+elif args == ['shell', 'pm', 'list', 'packages', 'com.google.android.apps.nexuslauncher']:
+    if os.getenv('MOCK_NO_PIXEL_LAUNCHER') != 'true':
+        print('package:com.google.android.apps.nexuslauncher')
+elif args == ['shell', 'pm', 'disable-user', '--user', '0', 'com.google.android.apps.nexuslauncher']:
+    if os.getenv('MOCK_DISABLE_FAIL') == 'true':
+        print('Error: cannot disable launcher'); sys.exit(0)
+    Path('launcher-disabled').touch()
+    print('Package com.google.android.apps.nexuslauncher new state: disabled-user')
+elif args == ['shell', 'am', 'force-stop', '--user', '0', 'com.google.android.apps.nexuslauncher']:
+    assert Path('launcher-disabled').is_file()
+    Path('launcher-stopped').touch()
 elif args[:1] == ['pull']:
     target = Path(args[-1])
     for language in ('en', 'uk'):
@@ -76,7 +88,16 @@ elif args[:1] == ['pull']:
 from pathlib import Path
 with Path('gradle-trace.jsonl').open('a') as file:
     file.write(json.dumps(sys.argv[1:]) + '\\n')
-if os.getenv('MOCK_GRADLE_FAIL') == 'true': sys.exit(42)
+if 'assembleDebugAndroidTest' in sys.argv:
+    assert not Path('emulator-trace.json').exists()
+    if os.getenv('MOCK_BUILD_FAIL') == 'true': sys.exit(41)
+    Path('apks-built').touch()
+elif 'connectedDebugAndroidTest' in sys.argv:
+    assert Path('apks-built').is_file()
+    if os.getenv('MOCK_NO_PIXEL_LAUNCHER') != 'true':
+        assert Path('launcher-disabled').is_file()
+        assert Path('launcher-stopped').is_file()
+    if os.getenv('MOCK_GRADLE_FAIL') == 'true': sys.exit(42)
 ''')
         self.env = dict(os.environ, ANDROID_HOME=str(self.root / 'sdk'),
                         PATH=str(selected) + os.pathsep + os.environ['PATH'],
@@ -107,7 +128,8 @@ if os.getenv('MOCK_GRADLE_FAIL') == 'true': sys.exit(42)
         self.assertIn('/cmdline-tools/22.0/bin/avdmanager', manager['manager'])
         self.assertEqual(manager['avd_home'], emulator['avd_home'])
         self.assertTrue(manager['avd_home'].startswith(str(self.root / 'runtime')))
-        self.assertEqual(2, len((self.root / 'gradle-trace.jsonl').read_text().splitlines()))
+        self.assertEqual(3, len((self.root / 'gradle-trace.jsonl').read_text().splitlines()))
+        self.assertTrue((self.root / 'launcher-stopped').is_file())
         self.assertEqual(28, len(list((self.root / 'artifacts/screenshots').rglob('*.png'))))
         self.assert_clean()
     def test_success_exit_without_avd_index_stops_before_emulator_boot(self):
@@ -135,6 +157,28 @@ if os.getenv('MOCK_GRADLE_FAIL') == 'true': sys.exit(42)
         self.env['MOCK_GRADLE_FAIL'] = 'true'
         result = self.capture()
         self.assertNotEqual(0, result.returncode)
+        self.assertTrue((self.root / 'emulator-trace.json').exists())
+        self.assert_clean()
+    def test_build_failure_stops_before_emulator_boot(self):
+        self.env['MOCK_BUILD_FAIL'] = 'true'
+        result = self.capture()
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse((self.root / 'emulator-trace.json').exists())
+        self.assert_clean()
+    def test_launcher_disable_failure_prevents_capture(self):
+        self.env['MOCK_DISABLE_FAIL'] = 'true'
+        result = self.capture()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('Could not disable', result.stderr)
+        self.assertEqual(1, len((self.root / 'gradle-trace.jsonl').read_text().splitlines()))
+        self.assertFalse((self.root / 'artifacts/screenshots').exists())
+        self.assert_clean()
+    def test_system_image_without_pixel_launcher_can_capture(self):
+        self.env['MOCK_NO_PIXEL_LAUNCHER'] = 'true'
+        result = self.capture()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse((self.root / 'launcher-disabled').exists())
+        self.assertEqual(28, len(list((self.root / 'artifacts/screenshots').rglob('*.png'))))
         self.assert_clean()
     def test_connected_device_is_left_untouched(self):
         self.env['MOCK_DEVICE'] = 'true'
