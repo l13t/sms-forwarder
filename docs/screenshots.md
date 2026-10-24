@@ -16,7 +16,7 @@ The SDK setup installs only the specified platform, build tools, emulator, and A
 
 The capture test streams PNG bytes directly into shell-owned storage on the emulator, then verifies each file's size before the script pulls it. Export failures include command stderr in the test report. This avoids copying through app external storage and does not depend on shell operators being interpreted by `UiAutomation`.
 
-APKs are compiled before booting Android to avoid competing with first-boot work. Pixel Launcher, when present, is disabled and force-stopped only in the fresh disposable AVD; the test launches the app directly. Before and after every screenshot, the test requires the app window to have focus and its package to own the active accessibility window. A launcher ANR or another focused system dialog fails capture and prevents publication of the whole set.
+APKs are compiled before booting Android to avoid competing with first-boot work. Pixel Launcher, when present, is disabled and force-stopped only in the fresh disposable AVD; the test launches the app directly. Before and after every screenshot, the test uses `WindowInspector` to require a visible app-owned window to have focus, allowing up to five seconds for window transitions. This includes app dialogs such as the rule editor and does not depend on accessibility roots, which may be unavailable. A launcher ANR or another focused system dialog fails capture and prevents publication of the whole set. An opt-in instrumentation preflight checks focus on the activity, an app dialog, and the activity again after dismissal.
 
 ## Local capture
 

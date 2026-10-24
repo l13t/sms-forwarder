@@ -3,6 +3,7 @@ package ua.smsforwarder
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.view.inspector.WindowInspector
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -20,6 +21,32 @@ import java.time.Instant
 /** Explicitly opt-in: this test replaces the disposable emulator's local app data. */
 class ReadmeScreenshotsTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test fun captureGuardAllowsAppDialog() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("captureScreenshots")=="true")
+        check(Build.HARDWARE in setOf("ranchu","goldfish")) { "Screenshots require a disposable Android emulator" }
+        assertAppInForeground("guard/activity")
+        val activity=compose.activity
+        var dialog:android.app.Dialog?=null
+        try {
+            compose.runOnUiThread {
+                dialog=android.app.Dialog(activity).apply {
+                    setContentView(android.widget.TextView(activity).apply { text="Screenshot guard preflight" })
+                    show()
+                }
+            }
+            compose.waitUntil(5_000) {
+                var focused=false
+                compose.runOnUiThread { focused=dialog?.window?.decorView?.hasWindowFocus()==true }
+                focused
+            }
+            // App dialogs (including the rule editor) take focus from the activity.
+            assertAppInForeground("guard/app-dialog")
+        } finally {
+            compose.runOnUiThread { dialog?.dismiss() }
+        }
+        assertAppInForeground("guard/dismissed-dialog")
+    }
 
     @Test fun captureDocumentation() {
         val args=InstrumentationRegistry.getArguments()
@@ -107,13 +134,22 @@ class ReadmeScreenshotsTest {
     }
 
     private fun assertAppInForeground(path:String) {
-        val activity=compose.activity
-        val automation=InstrumentationRegistry.getInstrumentation().uiAutomation
-        val activePackage=automation.rootInActiveWindow?.packageName?.toString()
-        compose.runOnUiThread {
-            check(activity.hasWindowFocus() && activePackage==activity.packageName) {
-                "Refusing screenshot $path: app focused=${activity.hasWindowFocus()}, active package=$activePackage. A system dialog or another app may cover the screen."
+        val packageName=compose.activity.packageName
+        var windowState="not inspected"
+        try {
+            compose.waitUntil(5_000) {
+                var focused=false
+                compose.runOnUiThread {
+                    // Accessibility roots may be null. Inspect actual process windows,
+                    // including Compose Dialog windows, rather than only the activity.
+                    val windows=WindowInspector.getGlobalWindowViews()
+                    focused=windows.any { it.isShown && it.hasWindowFocus() && it.context.packageName==packageName }
+                    windowState=windows.joinToString { "${it.javaClass.simpleName}(package=${it.context.packageName}, shown=${it.isShown}, focused=${it.hasWindowFocus()})" }
+                }
+                focused
             }
+        } catch (error:ComposeTimeoutException) {
+            throw IllegalStateException("Refusing screenshot $path: no visible app window has focus. A system dialog or another app may cover the screen. Windows: $windowState",error)
         }
     }
 
